@@ -1,1 +1,111 @@
+name: Java CI Template
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        required: true
+        type: string
+      build-tool:
+        required: true
+        type: string
+      service-name:
+        required: true
+        type: string
+      sonar-project-key:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+
+      - name: Cache Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2
+            ~/.gradle
+          key: ${{ runner.os }}-${{ hashFiles('**/*.xml', '**/*.gradle*') }}
+
+      # ---------------- BUILD ----------------
+      - name: Build Application
+        run: |
+          if [ "${{ inputs.build-tool }}" = "maven" ]; then
+            mvn clean compile
+          elif [ "${{ inputs.build-tool }}" = "gradle" ]; then
+            ./gradlew clean build -x test
+          fi
+
+      # ---------------- UNIT TESTS ----------------
+      - name: Run Unit Tests
+        run: |
+          if [ "${{ inputs.build-tool }}" = "maven" ]; then
+            mvn test
+          elif [ "${{ inputs.build-tool }}" = "gradle" ]; then
+            ./gradlew test
+          fi
+
+      # ---------------- INTEGRATION TESTS ----------------
+      - name: Run Integration Tests
+        run: |
+          if [ "${{ inputs.build-tool }}" = "maven" ]; then
+            mvn verify -Pintegration-tests
+          elif [ "${{ inputs.build-tool }}" = "gradle" ]; then
+            ./gradlew integrationTest
+          fi
+
+      # ---------------- CODE COVERAGE ----------------
+      - name: Generate Code Coverage
+        run: |
+          if [ "${{ inputs.build-tool }}" = "maven" ]; then
+            mvn jacoco:report
+          elif [ "${{ inputs.build-tool }}" = "gradle" ]; then
+            ./gradlew jacocoTestReport
+          fi
+
+      # ---------------- SECURITY SCAN (TRIVY) ----------------
+      - name: Trivy File System Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: 1
+
+      # ---------------- SONARQUBE SCAN ----------------
+      - name: SonarQube Scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          if [ "${{ inputs.build-tool }}" = "maven" ]; then
+            mvn sonar:sonar \
+              -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
+              -Dsonar.host.url=$SONAR_HOST_URL \
+              -Dsonar.login=$SONAR_TOKEN
+          elif [ "${{ inputs.build-tool }}" = "gradle" ]; then
+            ./gradlew sonar \
+              -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
+              -Dsonar.host.url=$SONAR_HOST_URL \
+              -Dsonar.login=$SONAR_TOKEN
+          fi
+
+      # ---------------- ARTIFACT ----------------
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.service-name }}-artifact
+          path: |
+            target/*.jar
 

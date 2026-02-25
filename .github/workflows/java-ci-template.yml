@@ -18,7 +18,7 @@ on:
       docker-image:
         required: true
         type: string
-      project-path:          
+      project-path:
         required: false
         type: string
         default: "."
@@ -49,6 +49,8 @@ jobs:
       # ---------------- VALIDATION ----------------
       - name: Validate Build Tool
         run: |
+          echo "Build Tool: ${{ inputs.build-tool }}"
+          echo "Project Path: ${{ inputs.project-path }}"
           if [[ "${{ inputs.build-tool }}" != "maven" && "${{ inputs.build-tool }}" != "gradle" ]]; then
             echo "Invalid build tool. Use 'maven' or 'gradle'"
             exit 1
@@ -62,7 +64,7 @@ jobs:
           java-version: ${{ inputs.java-version }}
           cache: ${{ inputs.build-tool }}
 
-      # ---------------- CACHE (extra safety) ----------------
+      # ---------------- CACHE ----------------
       - name: Cache Dependencies
         uses: actions/cache@v4
         with:
@@ -94,6 +96,7 @@ jobs:
 
       # ---------------- COVERAGE ----------------
       - name: Generate Code Coverage
+        working-directory: ${{ inputs.project-path }}
         run: |
           if [ "${{ inputs.build-tool }}" = "maven" ]; then
             mvn jacoco:report
@@ -103,6 +106,7 @@ jobs:
 
       # ---------------- SONARQUBE ----------------
       - name: SonarQube Scan
+        working-directory: ${{ inputs.project-path }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
@@ -124,7 +128,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.20.0
         with:
           scan-type: fs
-          scan-ref: .
+          scan-ref: ${{ inputs.project-path }}
           severity: HIGH,CRITICAL
           exit-code: 1
 
@@ -138,7 +142,7 @@ jobs:
       # ---------------- DOCKER BUILD ----------------
       - name: Build Docker Image
         run: |
-          docker build -t ${{ inputs.docker-image }}:${{ github.sha }} .
+          docker build -t ${{ inputs.docker-image }}:${{ github.sha }} ${{ inputs.project-path }}
           docker tag ${{ inputs.docker-image }}:${{ github.sha }} ${{ inputs.docker-image }}:latest
 
       # ---------------- TRIVY IMAGE SCAN ----------------

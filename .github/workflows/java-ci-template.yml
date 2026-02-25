@@ -76,14 +76,12 @@ jobs:
 
       # ---------------- BUILD ----------------
       - name: Validate Build Tool
-        working-directory: ${{ inputs.project-path }}
         run: |
           chmod +x gradlew
           ./gradlew clean build -x test
 
       # ---------------- UNIT TESTS ----------------
       - name: Run Unit Tests
-        working-directory: ${{ inputs.project-path }}
         run: |
           if [ "${{ inputs.build-tool }}" = "maven" ]; then
             mvn test

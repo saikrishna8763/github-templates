@@ -18,6 +18,10 @@ on:
       docker-image:
         required: true
         type: string
+      project-path:          
+        required: false
+        type: string
+        default: "."
     secrets:
       SONAR_TOKEN:
         required: true
@@ -69,6 +73,7 @@ jobs:
 
       # ---------------- BUILD ----------------
       - name: Build Application
+        working-directory: ${{ inputs.project-path }}
         run: |
           if [ "${{ inputs.build-tool }}" = "maven" ]; then
             mvn clean package -DskipTests
@@ -79,6 +84,7 @@ jobs:
 
       # ---------------- UNIT TESTS ----------------
       - name: Run Unit Tests
+        working-directory: ${{ inputs.project-path }}
         run: |
           if [ "${{ inputs.build-tool }}" = "maven" ]; then
             mvn test

@@ -42,9 +42,6 @@ jobs:
       # ---------------- CHECKOUT ----------------
       - name: Checkout Caller Repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
 
       # ---------------- VALIDATION ----------------
       - name: Validate Build Tool

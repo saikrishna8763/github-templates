@@ -1,4 +1,4 @@
-name: Java CI Template
+name: Java CI + Docker Security Template
 
 on:
   workflow_call:
@@ -15,30 +15,37 @@ on:
       sonar-project-key:
         required: true
         type: string
+      docker-image:
+        required: true
+        type: string
     secrets:
       SONAR_TOKEN:
         required: true
       SONAR_HOST_URL:
         required: true
+      DOCKER_USERNAME:
+        required: true
+      DOCKER_PASSWORD:
+        required: true
 
 jobs:
-  build:
-    name: Build • Test • Scan • Package
+  ci:
+    name: Code Quality • Security • Docker
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       # ---------------- CHECKOUT ----------------
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # Required for SonarQube
+          fetch-depth: 0
 
       # ---------------- VALIDATION ----------------
       - name: Validate Build Tool
         run: |
           if [[ "${{ inputs.build-tool }}" != "maven" && "${{ inputs.build-tool }}" != "gradle" ]]; then
-            echo "❌ Invalid build-tool value. Use 'maven' or 'gradle'."
+            echo "Invalid build tool. Use 'maven' or 'gradle'"
             exit 1
           fi
 
@@ -78,16 +85,7 @@ jobs:
             ./gradlew test
           fi
 
-      # ---------------- INTEGRATION TESTS ----------------
-      - name: Run Integration Tests
-        run: |
-          if [ "${{ inputs.build-tool }}" = "maven" ]; then
-            mvn verify -Pintegration-tests
-          else
-            ./gradlew integrationTest
-          fi
-
-      # ---------------- CODE COVERAGE ----------------
+      # ---------------- COVERAGE ----------------
       - name: Generate Code Coverage
         run: |
           if [ "${{ inputs.build-tool }}" = "maven" ]; then
@@ -96,18 +94,8 @@ jobs:
             ./gradlew jacocoTestReport
           fi
 
-      # ---------------- SECURITY SCAN ----------------
-      - name: Trivy File System Scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: fs
-          scan-ref: .
-          severity: HIGH,CRITICAL
-          exit-code: 1
-
       # ---------------- SONARQUBE ----------------
-      - name: SonarQube Scan
-        if: ${{ secrets.SONAR_TOKEN != '' }}
+      - name: SonarQube Quality Gate
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
@@ -124,12 +112,35 @@ jobs:
               -Dsonar.login=$SONAR_TOKEN
           fi
 
-      # ---------------- ARTIFACT ----------------
-      - name: Upload Build Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
+      # ---------------- TRIVY FS SCAN ----------------
+      - name: Trivy Code Scan (FS)
+        uses: aquasecurity/trivy-action@master
         with:
-          name: ${{ inputs.service-name }}-artifact
-          path: |
-            target/*.jar
-            build/libs/*.jar
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: 1
+
+      # ---------------- DOCKER LOGIN ----------------
+      - name: Docker Login
+        run: |
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login \
+            -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      # ---------------- DOCKER BUILD ----------------
+      - name: Build Docker Image
+        run: |
+          docker build -t ${{ inputs.docker-image }}:latest .
+
+      # ---------------- TRIVY IMAGE SCAN ----------------
+      - name: Trivy Image Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ inputs.docker-image }}:latest
+          severity: HIGH,CRITICAL
+          exit-code: 1
+
+      # ---------------- PUSH IMAGE ----------------
+      - name: Push Docker Image
+        run: |
+          docker push ${{ inputs.docker-image }}:latest

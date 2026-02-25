@@ -74,15 +74,11 @@ jobs:
           key: ${{ runner.os }}-${{ inputs.build-tool }}-${{ hashFiles('**/pom.xml', '**/*.gradle*') }}
 
       # ---------------- BUILD ----------------
-      - name: Build Application
+      - name: Validate Build Tool
         working-directory: ${{ inputs.project-path }}
         run: |
-          if [ "${{ inputs.build-tool }}" = "maven" ]; then
-            mvn clean package -DskipTests
-          else
-            chmod +x gradlew
-            ./gradlew clean build -x test
-          fi
+          chmod +x gradlew
+          ./gradlew clean build -x test
 
       # ---------------- UNIT TESTS ----------------
       - name: Run Unit Tests

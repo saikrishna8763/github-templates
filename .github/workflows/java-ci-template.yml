@@ -15,35 +15,57 @@ on:
       sonar-project-key:
         required: true
         type: string
+    secrets:
+      SONAR_TOKEN:
+        required: true
+      SONAR_HOST_URL:
+        required: true
 
 jobs:
   build:
+    name: Build • Test • Scan • Package
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
+      # ---------------- CHECKOUT ----------------
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Required for SonarQube
 
+      # ---------------- VALIDATION ----------------
+      - name: Validate Build Tool
+        run: |
+          if [[ "${{ inputs.build-tool }}" != "maven" && "${{ inputs.build-tool }}" != "gradle" ]]; then
+            echo "❌ Invalid build-tool value. Use 'maven' or 'gradle'."
+            exit 1
+          fi
+
+      # ---------------- JAVA SETUP ----------------
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: ${{ inputs.java-version }}
 
+      # ---------------- CACHE ----------------
       - name: Cache Dependencies
         uses: actions/cache@v4
         with:
           path: |
-            ~/.m2
-            ~/.gradle
-          key: ${{ runner.os }}-${{ hashFiles('**/*.xml', '**/*.gradle*') }}
+            ~/.m2/repository
+            ~/.gradle/caches
+          key: |
+            ${{ runner.os }}-${{ inputs.build-tool }}-${{ hashFiles('**/pom.xml', '**/*.gradle*') }}
 
       # ---------------- BUILD ----------------
       - name: Build Application
         run: |
           if [ "${{ inputs.build-tool }}" = "maven" ]; then
             mvn clean compile
-          elif [ "${{ inputs.build-tool }}" = "gradle" ]; then
+          else
+            chmod +x gradlew
             ./gradlew clean build -x test
           fi
 
@@ -52,7 +74,7 @@ jobs:
         run: |
           if [ "${{ inputs.build-tool }}" = "maven" ]; then
             mvn test
-          elif [ "${{ inputs.build-tool }}" = "gradle" ]; then
+          else
             ./gradlew test
           fi
 
@@ -61,7 +83,7 @@ jobs:
         run: |
           if [ "${{ inputs.build-tool }}" = "maven" ]; then
             mvn verify -Pintegration-tests
-          elif [ "${{ inputs.build-tool }}" = "gradle" ]; then
+          else
             ./gradlew integrationTest
           fi
 
@@ -70,11 +92,11 @@ jobs:
         run: |
           if [ "${{ inputs.build-tool }}" = "maven" ]; then
             mvn jacoco:report
-          elif [ "${{ inputs.build-tool }}" = "gradle" ]; then
+          else
             ./gradlew jacocoTestReport
           fi
 
-      # ---------------- SECURITY SCAN (TRIVY) ----------------
+      # ---------------- SECURITY SCAN ----------------
       - name: Trivy File System Scan
         uses: aquasecurity/trivy-action@master
         with:
@@ -83,8 +105,9 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: 1
 
-      # ---------------- SONARQUBE SCAN ----------------
+      # ---------------- SONARQUBE ----------------
       - name: SonarQube Scan
+        if: ${{ secrets.SONAR_TOKEN != '' }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
@@ -94,7 +117,7 @@ jobs:
               -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
               -Dsonar.host.url=$SONAR_HOST_URL \
               -Dsonar.login=$SONAR_TOKEN
-          elif [ "${{ inputs.build-tool }}" = "gradle" ]; then
+          else
             ./gradlew sonar \
               -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
               -Dsonar.host.url=$SONAR_HOST_URL \
@@ -102,10 +125,11 @@ jobs:
           fi
 
       # ---------------- ARTIFACT ----------------
-      - name: Upload Artifact
+      - name: Upload Build Artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.service-name }}-artifact
           path: |
             target/*.jar
-
+            build/libs/*.jar

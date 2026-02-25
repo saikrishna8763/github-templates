@@ -1,1 +1,23 @@
+name: Service CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  ci:
+    uses: org-infra/github-actions-templates/.github/workflows/java-ci-template.yml@main
+    with:
+      java-version: '21'
+      build-tool: 'maven'
+      service-name: 'payment-service'
+For another service:
+jobs:
+  ci:
+    uses: org-infra/github-actions-templates/.github/workflows/java-ci-template.yml@main
+    with:
+      java-version: '17'
+      build-tool: 'gradle'
+      service-name: 'order-service'
 

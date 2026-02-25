@@ -7,7 +7,7 @@ on:
 
 jobs:
   ci:
-    uses: org-infra/github-actions-templates/.github/workflows/java-ci-template.yml@main
+    uses: https://github.com/saikrishna8763/gs-serving-web-content.git
     with:
       java-version: '21'
       build-tool: 'maven'

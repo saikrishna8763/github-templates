@@ -1,7 +1,5 @@
 name: Java CI + Docker Security Template
-name: DISABLED - java-ci-template.
 
-on: []
 on:
   workflow_call:
     inputs:

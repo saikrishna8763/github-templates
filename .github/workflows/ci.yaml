@@ -50,42 +50,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ---------------- CHECKOUT ----------------
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0   # REQUIRED for SonarQube
 
+      # ---------------- JAVA SETUP ----------------
       - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
+          cache: maven
 
-      - name: Cache Gradle & Sonar
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.sonar/cache
-          key: ${{ runner.os }}-gradle-sonar-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+      # ---------------- BUILD & TEST ----------------
+      - name: Build and run tests
+        run: mvn clean verify
 
-      - name: Grant execute permission for Gradle
-        run: chmod +x gradlew
-
-      - name: Build application
-        run: ./gradlew clean build -x test
-
-      - name: Run tests
-        run: ./gradlew test
-
+      # ---------------- SONARQUBE SCAN ----------------
       - name: SonarQube Scan
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         run: |
-          ./gradlew sonar \
+          mvn sonar:sonar \
             -Dsonar.projectKey=java-gradle \
-            -Dsonar.branch.name=main \
             -Dsonar.host.url=$SONAR_HOST_URL \
             -Dsonar.login=$SONAR_TOKEN

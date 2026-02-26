@@ -74,12 +74,18 @@ jobs:
             ~/.gradle/caches
           key: ${{ runner.os }}-${{ inputs.build-tool }}-${{ hashFiles('**/pom.xml', '**/*.gradle*') }}
 
+     
+     
       # ---------------- BUILD ----------------
-      - name: Validate Build Tool
+      - name: Build Project
+        working-directory: ${{ inputs.project-path }}
         run: |
-          chmod +x gradlew
-          ./gradlew clean build -x test
-
+         if [ "${{ inputs.build-tool }}" = "gradle" ]; then
+         chmod +x gradlew
+         ./gradlew clean build -x test
+         else
+         mvn clean verify -DskipTests
+         fi
       # ---------------- UNIT TESTS ----------------
       - name: Run Unit Tests
         run: |

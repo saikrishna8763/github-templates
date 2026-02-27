@@ -29,20 +29,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout calling repo (VERY IMPORTANT)
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # Java setup
       - name: Setup JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: ${{ inputs.java-version }}
 
-      # Cache
       - name: Cache Gradle & Sonar
         uses: actions/cache@v4
         with:
@@ -55,7 +52,6 @@ jobs:
       - name: Grant permission
         run: chmod +x gradlew
 
-      # Build + Sonar
       - name: Build and Sonar
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -66,29 +62,33 @@ jobs:
             -Dsonar.host.url=$SONAR_HOST_URL \
             -Dsonar.login=$SONAR_TOKEN
 
-      # Upload artifact
       - name: Upload JAR
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.image-name }}-jar
           path: build/libs/*.jar
 
-      # ACR Login
       - name: Login to Azure ACR
         run: |
           docker login ${{ secrets.ACR_LOGIN_SERVER }} \
           -u ${{ secrets.ACR_USERNAME }} \
           -p ${{ secrets.ACR_PASSWORD }}
 
-      # Docker Build
       - name: Build Docker image
         run: |
           docker build \
           -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:latest .
 
-      # Docker Push
+      #  Trivy Scan (NEW)
+      - name: Trivy Scan Docker Image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:latest
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: 0
+
       - name: Push Docker image
         run: |
           docker push \
           ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:latest
- 

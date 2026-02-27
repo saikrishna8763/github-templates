@@ -79,7 +79,7 @@ jobs:
           docker build \
           -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:latest .
 
-      #  Trivy Scan (NEW)
+      #  ----Trivy Scan (NEW)-----
       - name: Trivy Scan Docker Image
         uses: aquasecurity/trivy-action@master
         with:

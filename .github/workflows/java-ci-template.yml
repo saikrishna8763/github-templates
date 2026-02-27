@@ -1,112 +1,165 @@
-name: Java Gradle CI with Sonar, Trivy & ACR
+name: Java CI + Docker Security Template
 
 on:
   workflow_call:
     inputs:
-      sonar_project_key:
+      java-version:
         required: true
         type: string
-      image_name:
+      build-tool:
         required: true
         type: string
+      service-name:
+        required: true
+        type: string
+      sonar-project-key:
+        required: true
+        type: string
+      docker-image:
+        required: true
+        type: string
+      project-path:
+        required: false
+        type: string
+        default: "."
     secrets:
       SONAR_TOKEN:
         required: true
       SONAR_HOST_URL:
         required: true
-      ACR_LOGIN_SERVER:
+      DOCKER_USERNAME:
         required: true
-      ACR_USERNAME:
-        required: true
-      ACR_PASSWORD:
+      DOCKER_PASSWORD:
         required: true
 
 jobs:
-  build:
+  ci:
+    name: Code Quality • Security • Docker
     runs-on: ubuntu-latest
+    timeout-minutes: 40
 
     steps:
-      # ---------------- CHECKOUT -----------------
-      - name: Checkout code
+      # ---------------- CHECKOUT ----------------
+      - name: Checkout Caller Repository
         uses: actions/checkout@v4
         with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.ref }}
           fetch-depth: 0
 
+      # ---------------- VALIDATION ----------------
+      - name: Validate Build Tool
+        run: |
+          echo "Build Tool: ${{ inputs.build-tool }}"
+          echo "Project Path: ${{ inputs.project-path }}"
+          if [[ "${{ inputs.build-tool }}" != "maven" && "${{ inputs.build-tool }}" != "gradle" ]]; then
+            echo "Invalid build tool. Use 'maven' or 'gradle'"
+            exit 1
+          fi
+
       # ---------------- JAVA SETUP ----------------
-      - name: Set up JDK 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: ${{ inputs.java-version }}
+          cache: ${{ inputs.build-tool }}
 
       # ---------------- CACHE ----------------
-      - name: Cache Gradle & Sonar
+      - name: Cache Dependencies
         uses: actions/cache@v4
         with:
           path: |
+            ~/.m2/repository
             ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.sonar/cache
-          key: ${{ runner.os }}-gradle-sonar-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-${{ inputs.build-tool }}-${{ hashFiles('**/pom.xml', '**/*.gradle*') }}
 
-      # ---------------- PERMISSIONS ----------------
-      - name: Grant execute permission for Gradle (if present)
+     
+     
+      # ---------------- BUILD ----------------
+      - name: Build Project
+        working-directory: ${{ inputs.project-path }}
         run: |
-          if [ -f gradlew ]; then
-            chmod +x gradlew
+         if [ "${{ inputs.build-tool }}" = "gradle" ]; then
+         chmod +x gradlew
+         ./gradlew clean build -x test
+         else
+         mvn clean verify -DskipTests
+         fi
+      # ---------------- UNIT TESTS ----------------
+      - name: Run Unit Tests
+        run: |
+          if [ "${{ inputs.build-tool }}" = "maven" ]; then
+            mvn test
           else
-            echo "gradlew not found, skipping chmod"
+            ./gradlew test
           fi
 
-      # ---------------- BUILD + SONAR ----------------
-      - name: Build and Analyze with SonarQube
+      # ---------------- COVERAGE ----------------
+      - name: Generate Code Coverage
+        working-directory: ${{ inputs.project-path }}
+        run: |
+          if [ "${{ inputs.build-tool }}" = "maven" ]; then
+            mvn jacoco:report
+          else
+            ./gradlew jacocoTestReport
+          fi
+
+      # ---------------- SONARQUBE ----------------
+      - name: SonarQube Scan
+        working-directory: ${{ inputs.project-path }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         run: |
-          ./gradlew clean build sonar \
-            -Dsonar.projectKey=${{ inputs.sonar_project_key }} \
-            -Dsonar.host.url=$SONAR_HOST_URL \
-            -Dsonar.login=$SONAR_TOKEN
+          if [ "${{ inputs.build-tool }}" = "maven" ]; then
+            mvn sonar:sonar \
+              -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
+              -Dsonar.host.url=$SONAR_HOST_URL \
+              -Dsonar.login=$SONAR_TOKEN
+          else
+            ./gradlew sonar \
+              -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
+              -Dsonar.host.url=$SONAR_HOST_URL \
+              -Dsonar.login=$SONAR_TOKEN
+          fi
 
-      # ---------------- JAR ARTIFACT ----------------
-      - name: Upload Spring Boot JAR
-        uses: actions/upload-artifact@v4
+      # ---------------- TRIVY FILE SYSTEM SCAN ----------------
+      - name: Trivy FS Scan
+        uses: aquasecurity/trivy-action@0.20.0
         with:
-          name: app-jar
-          path: build/libs/*.jar
+          scan-type: fs
+          scan-ref: ${{ inputs.project-path }}
+          severity: HIGH,CRITICAL
+          exit-code: 1
 
-      # ---------------- ACR LOGIN ----------------
-      - name: Login to Azure ACR
+      # ---------------- DOCKER LOGIN ----------------
+      - name: Docker Login
         run: |
-          docker login ${{ secrets.ACR_LOGIN_SERVER }} \
-          -u ${{ secrets.ACR_USERNAME }} \
-          -p ${{ secrets.ACR_PASSWORD }}
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login \
+            -u "${{ secrets.DOCKER_USERNAME }}" \
+            --password-stdin
 
       # ---------------- DOCKER BUILD ----------------
-      - name: Build Docker image
+      - name: Build Docker Image
         run: |
-          docker build \
-          -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image_name }}:${{ github.sha }} .
-
-      # ---------------- TRIVY INSTALL ----------------
-      - name: Install Trivy
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wget
-          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.0_Linux-64bit.deb
-          sudo dpkg -i trivy_0.50.0_Linux-64bit.deb
+          docker build -t ${{ inputs.docker-image }}:${{ github.sha }} ${{ inputs.project-path }}
+          docker tag ${{ inputs.docker-image }}:${{ github.sha }} ${{ inputs.docker-image }}:latest
 
       # ---------------- TRIVY IMAGE SCAN ----------------
-      - name: Trivy Image Scan (High & Critical)
-        run: |
-          trivy image \
-            --exit-code 1 \
-            --severity HIGH,CRITICAL \
-            ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image_name }}:${{ github.sha }}
+      - name: Trivy Image Scan
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          image-ref: ${{ inputs.docker-image }}:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          exit-code: 1
 
-      # ---------------- DOCKER PUSH ----------------
-      - name: Push Docker image to ACR
+      # ---------------- PUSH IMAGE ----------------
+      - name: Push Docker Image
         run: |
-          docker push \
-          ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image_name }}:${{ github.sha }}
+          docker push ${{ inputs.docker-image }}:${{ github.sha }}
+          docker push ${{ inputs.docker-image }}:latest
+
+
+
+

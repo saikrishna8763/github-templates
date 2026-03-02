@@ -43,15 +43,11 @@ jobs:
       - name: Checkout Caller Repository
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.repository }}
-          ref: ${{ github.ref }}
           fetch-depth: 0
 
       # ---------------- VALIDATION ----------------
       - name: Validate Build Tool
         run: |
-          echo "Build Tool: ${{ inputs.build-tool }}"
-          echo "Project Path: ${{ inputs.project-path }}"
           if [[ "${{ inputs.build-tool }}" != "maven" && "${{ inputs.build-tool }}" != "gradle" ]]; then
             echo "Invalid build tool. Use 'maven' or 'gradle'"
             exit 1
@@ -74,20 +70,20 @@ jobs:
             ~/.gradle/caches
           key: ${{ runner.os }}-${{ inputs.build-tool }}-${{ hashFiles('**/pom.xml', '**/*.gradle*') }}
 
-     
-     
       # ---------------- BUILD ----------------
       - name: Build Project
         working-directory: ${{ inputs.project-path }}
         run: |
-         if [ "${{ inputs.build-tool }}" = "gradle" ]; then
-         chmod +x gradlew
-         ./gradlew clean build -x test
-         else
-         mvn clean verify -DskipTests
-         fi
+          if [ "${{ inputs.build-tool }}" = "gradle" ]; then
+            chmod +x gradlew
+            ./gradlew clean build -x test
+          else
+            mvn clean verify -DskipTests
+          fi
+
       # ---------------- UNIT TESTS ----------------
       - name: Run Unit Tests
+        working-directory: ${{ inputs.project-path }}
         run: |
           if [ "${{ inputs.build-tool }}" = "maven" ]; then
             mvn test
@@ -105,24 +101,66 @@ jobs:
             ./gradlew jacocoTestReport
           fi
 
-      # ---------------- SONARQUBE ----------------
+      # ---------------- SONARQUBE SCAN (PR AWARE) ----------------
       - name: SonarQube Scan
         working-directory: ${{ inputs.project-path }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         run: |
+          EXTRA_ARGS=""
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            EXTRA_ARGS="
+              -Dsonar.pullrequest.key=${{ github.event.pull_request.number }}
+              -Dsonar.pullrequest.branch=${{ github.head_ref }}
+              -Dsonar.pullrequest.base=${{ github.base_ref }}
+            "
+          fi
+
           if [ "${{ inputs.build-tool }}" = "maven" ]; then
             mvn sonar:sonar \
               -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
               -Dsonar.host.url=$SONAR_HOST_URL \
-              -Dsonar.login=$SONAR_TOKEN
+              -Dsonar.login=$SONAR_TOKEN \
+              $EXTRA_ARGS
           else
             ./gradlew sonar \
               -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
               -Dsonar.host.url=$SONAR_HOST_URL \
-              -Dsonar.login=$SONAR_TOKEN
+              -Dsonar.login=$SONAR_TOKEN \
+              $EXTRA_ARGS
           fi
+
+      # ---------------- SONAR QUALITY GATE ----------------
+      - name: SonarQube Quality Gate
+        uses: sonarsource/sonarqube-quality-gate-action@v1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      # ---------------- GITHUB JOB SUMMARY ----------------
+      - name: SonarQube Summary (GitHub Only)
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          PROJECT_KEY="${{ inputs.sonar-project-key }}"
+
+          sleep 10
+
+          METRICS=$(curl -s -u "$SONAR_TOKEN:" \
+            "$SONAR_HOST_URL/api/measures/component?component=$PROJECT_KEY&metricKeys=bugs,code_smells,vulnerabilities,coverage")
+
+          BUGS=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="bugs") | .value')
+          SMELLS=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="code_smells") | .value')
+          VULNS=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="vulnerabilities") | .value')
+          COVERAGE=$(echo "$METRICS" | jq -r '.component.measures[] | select(.metric=="coverage") | .value')
+
+          echo "## 📊 SonarQube Analysis Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐞 Bugs: **${BUGS:-0}**" >> $GITHUB_STEP_SUMMARY
+          echo "- 🧹 Code Smells: **${SMELLS:-0}**" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔐 Vulnerabilities: **${VULNS:-0}**" >> $GITHUB_STEP_SUMMARY
+          echo "- 📈 Coverage: **${COVERAGE:-0}%**" >> $GITHUB_STEP_SUMMARY
 
       # ---------------- TRIVY FILE SYSTEM SCAN ----------------
       - name: Trivy FS Scan
@@ -159,7 +197,3 @@ jobs:
         run: |
           docker push ${{ inputs.docker-image }}:${{ github.sha }}
           docker push ${{ inputs.docker-image }}:latest
-
-
-
-

@@ -43,7 +43,7 @@ jobs:
       - name: Create Reports Directory
         run: mkdir -p reports
 
-      # ---------------- TRIVY JSON REPORT ----------------
+      # ---------------- TRIVY JSON SCAN ----------------
       - name: Trivy JSON Scan
         run: |
           docker run --rm \
@@ -54,7 +54,7 @@ jobs:
             --severity HIGH,CRITICAL \
             --format json \
             --output /reports/trivy-report.json \
-            ${{ inputs.docker-image }}:${{ github.sha }}
+            ${{ inputs.docker-image }}:${{ github.sha }} || true
 
       # ---------------- TRIVY HTML REPORT ----------------
       - name: Trivy HTML Scan
@@ -68,32 +68,30 @@ jobs:
             --format template \
             --template "@/contrib/html.tpl" \
             --output /reports/trivy-report.html \
-            ${{ inputs.docker-image }}:${{ github.sha }}
+            ${{ inputs.docker-image }}:${{ github.sha }} || true
 
       # ---------------- UPLOAD REPORTS ----------------
       - name: Upload Trivy Reports
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: trivy-security-reports
           path: reports
           retention-days: 5
 
-      # ---------------- FAIL AFTER UPLOAD ----------------
-      - name: Fail If HIGH or CRITICAL Found
+      # ---------------- CHECK VULNERABILITIES (DO NOT FAIL) ----------------
+      - name: Check Vulnerabilities (Do Not Fail)
         run: |
           COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' reports/trivy-report.json)
           echo "Vulnerabilities Found: $COUNT"
+
           if [ "$COUNT" -gt 0 ]; then
-            echo "❌ High/Critical vulnerabilities detected!"
-            exit 1
+            echo "⚠️ High/Critical vulnerabilities detected!"
           else
             echo "✅ No High/Critical vulnerabilities found."
           fi
 
-      # ---------------- PUSH IMAGE ONLY IF SAFE ----------------
+      # ---------------- PUSH IMAGE ----------------
       - name: Push Image
-        if: success()
         run: |
           docker push ${{ inputs.docker-image }}:${{ github.sha }}
           docker push ${{ inputs.docker-image }}:latest

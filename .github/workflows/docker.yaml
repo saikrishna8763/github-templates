@@ -43,52 +43,26 @@ jobs:
       - name: Create Reports Directory
         run: mkdir -p reports
 
-      # ---------------- TRIVY JSON SCAN ----------------
-      - name: Trivy JSON Scan
+      # ---------------- TRIVY SCAN (NO FAIL, NO FILTER) ----------------
+      - name: Trivy Scan (Monitor Only)
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v $(pwd)/reports:/reports \
             aquasec/trivy:latest \
             image \
-            --severity HIGH,CRITICAL \
-            --format json \
-            --output /reports/trivy-report.json \
-            ${{ inputs.docker-image }}:${{ github.sha }} || true
-
-      # ---------------- TRIVY HTML REPORT ----------------
-      - name: Trivy HTML Scan
-        run: |
-          docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v $(pwd)/reports:/reports \
-            aquasec/trivy:latest \
-            image \
-            --severity HIGH,CRITICAL \
             --format template \
             --template "@/contrib/html.tpl" \
             --output /reports/trivy-report.html \
             ${{ inputs.docker-image }}:${{ github.sha }} || true
 
-      # ---------------- UPLOAD REPORTS ----------------
-      - name: Upload Trivy Reports
+      # ---------------- UPLOAD REPORT ----------------
+      - name: Upload Trivy Report
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-security-reports
+          name: trivy-report
           path: reports
           retention-days: 5
-
-      # ---------------- CHECK VULNERABILITIES (DO NOT FAIL) ----------------
-      - name: Check Vulnerabilities (Do Not Fail)
-        run: |
-          COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' reports/trivy-report.json)
-          echo "Vulnerabilities Found: $COUNT"
-
-          if [ "$COUNT" -gt 0 ]; then
-            echo "⚠️ High/Critical vulnerabilities detected!"
-          else
-            echo "✅ No High/Critical vulnerabilities found."
-          fi
 
       # ---------------- PUSH IMAGE ----------------
       - name: Push Image

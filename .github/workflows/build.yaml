@@ -1,9 +1,20 @@
-name: Build
+name: Build Template
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_call:
+    inputs:
+      java-version:
+        required: true
+        type: string
+      build-tool:
+        required: true
+        type: string
+      service-name:
+        required: true
+        type: string
+      project-path:
+        required: true
+        type: string
 
 jobs:
   build:
@@ -15,7 +26,14 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: ${{ inputs.java-version }}
 
-      - run: chmod +x gradlew
-      - run: ./gradlew clean build -x test
+      - name: Build
+        working-directory: ${{ inputs.project-path }}
+        run: |
+          if [ "${{ inputs.build-tool }}" = "maven" ]; then
+            mvn clean package -DskipTests
+          else
+            chmod +x gradlew
+            ./gradlew clean build -x test
+          fi

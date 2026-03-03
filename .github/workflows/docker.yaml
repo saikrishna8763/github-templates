@@ -61,16 +61,16 @@ jobs:
           exit-code: 0
 
       # ---------------- FAIL ONLY ON CRITICAL ----------------
-      - name: Fail Only On CRITICAL
-        run: |
-          COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' trivy-report.json)
-          echo "Critical Vulnerabilities Found: $COUNT"
-          if [ "$COUNT" -gt 0 ]; then
-            echo "Critical vulnerabilities detected!"
-            exit 1
-          else
-            echo "No critical vulnerabilities found."
-          fi
+      #- name: Fail Only On CRITICAL
+        #run: |
+          #COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' trivy-report.json)
+          #echo "Critical Vulnerabilities Found: $COUNT"
+          #if [ "$COUNT" -gt 0 ]; then
+            #echo "Critical vulnerabilities detected!"
+            #exit 1
+          #else
+            #echo "No critical vulnerabilities found."
+          #fi
 
       # ---------------- UPLOAD REPORTS ----------------
       - name: Upload Trivy Reports

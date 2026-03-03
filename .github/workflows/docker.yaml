@@ -3,16 +3,18 @@ name: Docker Build & Security Scan
 on:
   workflow_call:
     inputs:
-      docker-image:
+      image-name:
         required: true
         type: string
       project-path:
         required: true
         type: string
     secrets:
-      DOCKER_USERNAME:
+      ACR_LOGIN_SERVER:
         required: true
-      DOCKER_PASSWORD:
+      ACR_USERNAME:
+        required: true
+      ACR_PASSWORD:
         required: true
 
 jobs:
@@ -24,26 +26,29 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # ---------------- DOCKER LOGIN ----------------
-      - name: Docker Login
+      # ---------------- LOGIN TO ACR ----------------
+      - name: Login to Azure ACR
         run: |
-          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login \
-            -u "${{ secrets.DOCKER_USERNAME }}" \
+          echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ secrets.ACR_LOGIN_SERVER }} \
+            -u "${{ secrets.ACR_USERNAME }}" \
             --password-stdin
 
       # ---------------- BUILD IMAGE ----------------
       - name: Build Docker Image
         working-directory: ${{ inputs.project-path }}
         run: |
-          docker build -t ${{ inputs.docker-image }}:${{ github.sha }} .
-          docker tag ${{ inputs.docker-image }}:${{ github.sha }} \
-                     ${{ inputs.docker-image }}:latest
+          docker build \
+            -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }} .
+          
+          docker tag \
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }} \
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:latest
 
       # ---------------- CREATE REPORT FOLDER ----------------
       - name: Create Reports Directory
         run: mkdir -p reports
 
-      # ---------------- TRIVY SCAN (NO FAIL, NO FILTER) ----------------
+      # ---------------- TRIVY SCAN ----------------
       - name: Trivy Scan (Monitor Only)
         run: |
           docker run --rm \
@@ -54,7 +59,7 @@ jobs:
             --format template \
             --template "@/contrib/html.tpl" \
             --output /reports/trivy-report.html \
-            ${{ inputs.docker-image }}:${{ github.sha }} || true
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }} || true
 
       # ---------------- UPLOAD REPORT ----------------
       - name: Upload Trivy Report
@@ -67,5 +72,5 @@ jobs:
       # ---------------- PUSH IMAGE ----------------
       - name: Push Image
         run: |
-          docker push ${{ inputs.docker-image }}:${{ github.sha }}
-          docker push ${{ inputs.docker-image }}:latest
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:latest

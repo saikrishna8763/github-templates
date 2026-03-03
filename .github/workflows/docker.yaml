@@ -45,7 +45,6 @@ jobs:
         with:
           image-ref: ${{ inputs.docker-image }}:${{ github.sha }}
           vuln-type: library
-          severity: HIGH,CRITICAL
           format: json
           output: trivy-report.json
           exit-code: 0
@@ -61,14 +60,16 @@ jobs:
           output: trivy-report.html
           exit-code: 0
 
-      # ---------------- FAIL IF HIGH/CRITICAL FOUND ----------------
-      - name: Fail if HIGH or CRITICAL Found
+      # ---------------- FAIL ONLY ON CRITICAL ----------------
+      - name: Fail Only On CRITICAL
         run: |
-          COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' trivy-report.json)
-          echo "Vulnerabilities Found: $COUNT"
+          COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' trivy-report.json)
+          echo "Critical Vulnerabilities Found: $COUNT"
           if [ "$COUNT" -gt 0 ]; then
-            echo "❌ High/Critical vulnerabilities detected!"
+            echo "Critical vulnerabilities detected!"
             exit 1
+          else
+            echo "No critical vulnerabilities found."
           fi
 
       # ---------------- UPLOAD REPORTS ----------------

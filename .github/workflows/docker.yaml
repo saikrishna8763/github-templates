@@ -22,18 +22,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ---------------- CHECKOUT ----------------
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # ---------------- LOGIN TO ACR ----------------
+      # 🔐 Login to ACR
       - name: Login to Azure ACR
         run: |
           echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ secrets.ACR_LOGIN_SERVER }} \
             -u "${{ secrets.ACR_USERNAME }}" \
             --password-stdin
 
-      # ---------------- BUILD IMAGE ----------------
+      # 🏗 Build Image
       - name: Build Docker Image
         working-directory: ${{ inputs.project-path }}
         run: |
@@ -44,11 +43,11 @@ jobs:
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }} \
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:latest
 
-      # ---------------- CREATE REPORT FOLDER ----------------
+      # 📁 Create Reports Folder
       - name: Create Reports Directory
         run: mkdir -p reports
 
-      # ---------------- TRIVY SCAN ----------------
+      # 🔎 Trivy Scan
       - name: Trivy Scan (Monitor Only)
         run: |
           docker run --rm \
@@ -61,7 +60,7 @@ jobs:
             --output /reports/trivy-report.html \
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }} || true
 
-      # ---------------- UPLOAD REPORT ----------------
+      # 📤 Upload Report
       - name: Upload Trivy Report
         uses: actions/upload-artifact@v4
         with:
@@ -69,7 +68,7 @@ jobs:
           path: reports
           retention-days: 5
 
-      # ---------------- PUSH IMAGE ----------------
+      # 🚀 Push Image
       - name: Push Image
         run: |
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}

@@ -22,17 +22,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ---------------- CHECKOUT ----------------
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 🔐 Login to ACR
+      # ---------------- LOGIN TO ACR ----------------
       - name: Login to Azure ACR
         run: |
           echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ secrets.ACR_LOGIN_SERVER }} \
             -u "${{ secrets.ACR_USERNAME }}" \
             --password-stdin
 
-      # 🏗 Build Image
+      # ---------------- BUILD IMAGE ----------------
       - name: Build Docker Image
         working-directory: ${{ inputs.project-path }}
         run: |
@@ -43,32 +44,34 @@ jobs:
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }} \
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:latest
 
-      # 📁 Create Reports Folder
+      # ---------------- CREATE REPORT DIRECTORY ----------------
       - name: Create Reports Directory
         run: mkdir -p reports
 
-      # 🔎 Trivy Scan
-      - name: Trivy Scan (Monitor Only)
+      # ---------------- TRIVY IMAGE SCAN ----------------
+      - name: Trivy Image Scan (Fail on CRITICAL)
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v $(pwd)/reports:/reports \
             aquasec/trivy:latest \
             image \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
             --format template \
             --template "@/contrib/html.tpl" \
-            --output /reports/trivy-report.html \
-            ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }} || true
+            --output /reports/trivy-image-report.html \
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}
 
-      # 📤 Upload Report
-      - name: Upload Trivy Report
+      # ---------------- UPLOAD TRIVY REPORT ----------------
+      - name: Upload Trivy Image Report
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-report
+          name: trivy-image-report
           path: reports
-          retention-days: 5
+          retention-days: 7
 
-      # 🚀 Push Image
+      # ---------------- PUSH IMAGE (Only if scan passes) ----------------
       - name: Push Image
         run: |
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}

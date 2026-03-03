@@ -20,15 +20,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ---------------- CHECKOUT ----------------
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # ---------------- DOCKER LOGIN ----------------
       - name: Docker Login
         run: |
           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login \
             -u "${{ secrets.DOCKER_USERNAME }}" \
             --password-stdin
 
+      # ---------------- BUILD IMAGE ----------------
       - name: Build Docker Image
         working-directory: ${{ inputs.project-path }}
         run: |
@@ -36,15 +39,49 @@ jobs:
           docker tag ${{ inputs.docker-image }}:${{ github.sha }} \
                      ${{ inputs.docker-image }}:latest
 
-      - name: Trivy Image Scan (Library Only)
+      # ---------------- TRIVY JSON REPORT ----------------
+      - name: Trivy Scan (JSON Report)
         uses: aquasecurity/trivy-action@0.20.0
         with:
           image-ref: ${{ inputs.docker-image }}:${{ github.sha }}
           vuln-type: library
           severity: HIGH,CRITICAL
-          format: table
-          exit-code: 1
+          format: json
+          output: trivy-report.json
+          exit-code: 0
 
+      # ---------------- TRIVY HTML REPORT ----------------
+      - name: Trivy Scan (HTML Report)
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          image-ref: ${{ inputs.docker-image }}:${{ github.sha }}
+          vuln-type: library
+          format: template
+          template: "@/contrib/html.tpl"
+          output: trivy-report.html
+          exit-code: 0
+
+      # ---------------- FAIL IF HIGH/CRITICAL FOUND ----------------
+      - name: Fail if HIGH or CRITICAL Found
+        run: |
+          COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' trivy-report.json)
+          echo "Vulnerabilities Found: $COUNT"
+          if [ "$COUNT" -gt 0 ]; then
+            echo "❌ High/Critical vulnerabilities detected!"
+            exit 1
+          fi
+
+      # ---------------- UPLOAD REPORTS ----------------
+      - name: Upload Trivy Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-security-reports
+          path: |
+            trivy-report.json
+            trivy-report.html
+          retention-days: 5
+
+      # ---------------- PUSH IMAGE ----------------
       - name: Push Image
         run: |
           docker push ${{ inputs.docker-image }}:${{ github.sha }}

@@ -1,10 +1,17 @@
-name: Test
+name: Test Template
 
 on:
-  workflow_run:
-    workflows: ["Build"]
-    types:
-      - completed
+  workflow_call:
+    inputs:
+      java-version:
+        required: true
+        type: string
+      build-tool:
+        required: true
+        type: string
+      project-path:
+        required: true
+        type: string
 
 jobs:
   test:
@@ -12,9 +19,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: ${{ inputs.java-version }}
 
-      - run: ./gradlew test
+      - name: Run Tests
+        working-directory: ${{ inputs.project-path }}
+        run: |
+          if [ "${{ inputs.build-tool }}" = "maven" ]; then
+            mvn test
+          else
+            ./gradlew test
+          fi

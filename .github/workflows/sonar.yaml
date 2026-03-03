@@ -1,6 +1,14 @@
+name: Sonar Scan Template
+
 on:
   workflow_call:
     inputs:
+      java-version:
+        required: true
+        type: string
+      build-tool:
+        required: true
+        type: string
       sonar-project-key:
         required: true
         type: string
@@ -18,20 +26,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: ${{ inputs.java-version }}
 
-      - name: Compile + Sonar
+      - name: Compile + Sonar Scan
         working-directory: ${{ inputs.project-path }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         run: |
-          mvn clean verify sonar:sonar \
-            -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
-            -Dsonar.host.url=$SONAR_HOST_URL \
-            -Dsonar.token=$SONAR_TOKEN
+          if [ "${{ inputs.build-tool }}" = "maven" ]; then
+            mvn clean verify sonar:sonar \
+              -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
+              -Dsonar.host.url=$SONAR_HOST_URL \
+              -Dsonar.token=$SONAR_TOKEN
+          else
+            chmod +x gradlew
+            ./gradlew clean build sonar \
+              -Dsonar.projectKey=${{ inputs.sonar-project-key }} \
+              -Dsonar.host.url=$SONAR_HOST_URL \
+              -Dsonar.token=$SONAR_TOKEN
+          fi

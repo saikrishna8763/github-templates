@@ -39,52 +39,59 @@ jobs:
           docker tag ${{ inputs.docker-image }}:${{ github.sha }} \
                      ${{ inputs.docker-image }}:latest
 
+      # ---------------- CREATE REPORT FOLDER ----------------
+      - name: Create Reports Directory
+        run: mkdir -p reports
+
       # ---------------- TRIVY JSON REPORT ----------------
-      - name: Trivy Scan (Generate JSON Report)
-        uses: aquasecurity/trivy-action@0.20.0
-        with:
-          image-ref: ${{ inputs.docker-image }}:${{ github.sha }}
-          vuln-type: library
-          severity: HIGH,CRITICAL
-          format: json
-          output: trivy-report.json
-          exit-code: 0   # IMPORTANT: Do not fail here
+      - name: Trivy JSON Scan
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v $(pwd)/reports:/reports \
+            aquasec/trivy:latest \
+            image \
+            --severity HIGH,CRITICAL \
+            --format json \
+            --output /reports/trivy-report.json \
+            ${{ inputs.docker-image }}:${{ github.sha }}
 
       # ---------------- TRIVY HTML REPORT ----------------
-      - name: Trivy Scan (Generate HTML Report)
-        uses: aquasecurity/trivy-action@0.20.0
-        with:
-          image-ref: ${{ inputs.docker-image }}:${{ github.sha }}
-          vuln-type: library
-          format: template
-          template: "@/contrib/html.tpl"
-          output: trivy-report.html
-          exit-code: 0
+      - name: Trivy HTML Scan
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v $(pwd)/reports:/reports \
+            aquasec/trivy:latest \
+            image \
+            --severity HIGH,CRITICAL \
+            --format template \
+            --template "@/contrib/html.tpl" \
+            --output /reports/trivy-report.html \
+            ${{ inputs.docker-image }}:${{ github.sha }}
 
-      # ---------------- UPLOAD REPORTS (ALWAYS RUN) ----------------
+      # ---------------- UPLOAD REPORTS ----------------
       - name: Upload Trivy Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: trivy-security-reports
-          path: |
-            trivy-report.json
-            trivy-report.html
+          path: reports
           retention-days: 5
 
-      # ---------------- FAIL AFTER REPORT UPLOAD ----------------
+      # ---------------- FAIL AFTER UPLOAD ----------------
       - name: Fail If HIGH or CRITICAL Found
         run: |
-          COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' trivy-report.json)
+          COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' reports/trivy-report.json)
           echo "Vulnerabilities Found: $COUNT"
           if [ "$COUNT" -gt 0 ]; then
             echo "❌ High/Critical vulnerabilities detected!"
             exit 1
           else
-            echo "✅ No High/Critical vulnerabilities."
+            echo "✅ No High/Critical vulnerabilities found."
           fi
 
-      # ---------------- PUSH IMAGE (ONLY IF SAFE) ----------------
+      # ---------------- PUSH IMAGE ONLY IF SAFE ----------------
       - name: Push Image
         if: success()
         run: |

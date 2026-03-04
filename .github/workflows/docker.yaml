@@ -39,31 +39,41 @@ jobs:
         run: |
           docker build \
             -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }} .
-          
+
           docker tag \
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }} \
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:latest
+
+      # ---------------- SECURITY GATE ----------------
+      - name: Trivy Security Gate
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:latest \
+            image \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}
 
       # ---------------- CREATE REPORT DIRECTORY ----------------
       - name: Create Reports Directory
         run: mkdir -p reports
 
-      # ---------------- TRIVY IMAGE SCAN ----------------
-      - name: Trivy Image Scan (Fail on CRITICAL)
+      # ---------------- GENERATE HTML REPORT ----------------
+      - name: Generate Trivy HTML Report
+        if: always()
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v $(pwd)/reports:/reports \
             aquasec/trivy:latest \
             image \
-            --severity HIGH,CRITICAL \
-            --exit-code 1 \
             --format template \
             --template "@/contrib/html.tpl" \
             --output /reports/trivy-image-report.html \
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}
 
-      # ---------------- UPLOAD TRIVY REPORT ----------------
+      # ---------------- UPLOAD REPORT ----------------
       - name: Upload Trivy Image Report
         uses: actions/upload-artifact@v4
         with:
@@ -71,7 +81,7 @@ jobs:
           path: reports
           retention-days: 7
 
-      # ---------------- PUSH IMAGE (Only if scan passes) ----------------
+      # ---------------- PUSH IMAGE ----------------
       - name: Push Image
         run: |
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}

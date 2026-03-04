@@ -44,7 +44,7 @@ jobs:
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }} \
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:latest
 
-      # ---------------- SECURITY GATE ----------------
+      # ---------------- TRIVY SECURITY GATE ----------------
       - name: Trivy Security Gate
         run: |
           docker run --rm \
@@ -52,7 +52,7 @@ jobs:
             aquasec/trivy:latest \
             image \
             --severity HIGH,CRITICAL \
-            --exit-code 0 \
+            --exit-code 1 \
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}
 
       # ---------------- CREATE REPORT DIRECTORY ----------------
@@ -83,6 +83,7 @@ jobs:
 
       # ---------------- PUSH IMAGE ----------------
       - name: Push Image
+        if: success()
         run: |
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:latest

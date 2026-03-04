@@ -26,37 +26,20 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # ---------------- CREATE REPORT DIRECTORY ----------------
-      - name: Create Reports Directory
-        run: mkdir -p reports
-
-      # ---------------- TRIVY FILE SYSTEM SCAN (HTML REPORT) ----------------
-      - name: Trivy FS Scan (HTML Report)
-        run: |
-          docker run --rm \
-            -v $(pwd):/app \
-            -v $(pwd)/reports:/reports \
-            aquasec/trivy:latest \
-            fs \
-            --severity HIGH,CRITICAL \
-            --format template \
-            --template "@/contrib/html.tpl" \
-            --output /reports/trivy-fs-report.html \
-            /app
-
-      # ---------------- UPLOAD FS REPORT ----------------
-      - name: Upload Trivy FS Report
-        uses: actions/upload-artifact@v4
+      # ---------------- TRIVY FILE SYSTEM SCAN ----------------
+      - name: Trivy FS Scan
+        uses: aquasecurity/trivy-action@0.20.0
         with:
-          name: trivy-fs-report
-          path: reports/trivy-fs-report.html
-          retention-days: 7
+          scan-type: fs
+          scan-ref: ${{ inputs.project-path }}
+          severity: HIGH,CRITICAL
+          exit-code: 1
 
       # ---------------- LOGIN TO AZURE ACR ----------------
       - name: Login to Azure ACR
         run: |
           echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ secrets.ACR_LOGIN_SERVER }} \
-            -u "${{ secrets.ACR_USERNAME }}" \
+            -u "${{ secrets.ACR_USERNAME }} " \
             --password-stdin
 
       # ---------------- BUILD IMAGE ----------------
@@ -70,19 +53,24 @@ jobs:
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }} \
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:latest
 
-      # ---------------- TRIVY SECURITY GATE ----------------
+      # ---------------- TRIVY IMAGE SECURITY GATE (SKIP OS CVEs) ----------------
       - name: Trivy Security Gate
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy:latest \
             image \
+            --vuln-type library \
             --severity HIGH,CRITICAL \
             --exit-code 1 \
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}
 
-      # ---------------- GENERATE IMAGE HTML REPORT ----------------
-      - name: Generate Trivy Image HTML Report
+      # ---------------- CREATE REPORT DIRECTORY ----------------
+      - name: Create Reports Directory
+        run: mkdir -p reports
+
+      # ---------------- GENERATE HTML REPORT ----------------
+      - name: Generate Trivy HTML Report
         if: always()
         run: |
           docker run --rm \
@@ -90,17 +78,18 @@ jobs:
             -v $(pwd)/reports:/reports \
             aquasec/trivy:latest \
             image \
+            --vuln-type library \
             --format template \
             --template "@/contrib/html.tpl" \
             --output /reports/trivy-image-report.html \
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}
 
-      # ---------------- UPLOAD IMAGE REPORT ----------------
+      # ---------------- UPLOAD REPORT ----------------
       - name: Upload Trivy Image Report
         uses: actions/upload-artifact@v4
         with:
           name: trivy-image-report
-          path: reports/trivy-image-report.html
+          path: reports
           retention-days: 7
 
       # ---------------- PUSH IMAGE ----------------

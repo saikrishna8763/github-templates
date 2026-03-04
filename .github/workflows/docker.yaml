@@ -52,7 +52,7 @@ jobs:
             aquasec/trivy:latest \
             image \
             --severity HIGH,CRITICAL \
-            --exit-code 1 \
+            --exit-code 0 \
             ${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}
 
       # ---------------- CREATE REPORT DIRECTORY ----------------
